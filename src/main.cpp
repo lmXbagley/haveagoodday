@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
     if (!font) font = XLoadQueryFont(dpy, "fixed");
     GC gc = XCreateGC(dpy, win, 0, nullptr);
     if (font) XSetFont(dpy, gc, font->fid);
+    else fprintf(stderr, "warning: X fonts not found (xfonts-base) — panel text will be hidden\n");
 
     auto col = [&](int r, int g2, int b) {
         XColor c;
@@ -134,6 +135,7 @@ int main(int argc, char** argv) {
     };
 
     auto drawText = [&](int x, int y, const std::string& s, unsigned long c) {
+        if (!font || s.empty()) return;
         XSetForeground(dpy, gc, c);
         XDrawString(dpy, win, gc, x, y, s.c_str(), (int)s.size());
     };
@@ -177,7 +179,9 @@ int main(int argc, char** argv) {
         while (XPending(dpy)) {
             XEvent ev;
             XNextEvent(dpy, &ev);
-            if (ev.type == ClientMessage) { running = false; }
+            if (ev.type == ClientMessage) {
+                if ((Atom)ev.xclient.data.l[0] == del) running = false;
+            }
             else if (ev.type == ConfigureNotify) {
                 curW = 0;
             } else if (ev.type == ButtonPress) {
@@ -265,9 +269,10 @@ int main(int argc, char** argv) {
             if (curW < 640) curW = 640;
             if (curH < 480) curH = 480;
             fb.resize(curW, curH);
-            if (img) XDestroyImage(img);
+            if (img) { img->data = nullptr; XDestroyImage(img); }
             img = XCreateImage(dpy, DefaultVisual(dpy, scr), (unsigned int)DefaultDepth(dpy, scr),
                                ZPixmap, 0, (char*)fb.pix.data(), (unsigned int)curW, (unsigned int)curH, 32, curW * 4);
+            if (!img) { fprintf(stderr, "XCreateImage failed\n"); return 1; }
             layout(curW, curH);
         }
 
@@ -407,7 +412,7 @@ int main(int argc, char** argv) {
     audio.stop();
     if (audio.recording()) audio.stopRecording();
     stopApiServer(api);
-    if (img) XDestroyImage(img);
+    if (img) { img->data = nullptr; XDestroyImage(img); }
     XFreeGC(dpy, gc);
     if (font) XFreeFont(dpy, font);
     XDestroyWindow(dpy, win);
